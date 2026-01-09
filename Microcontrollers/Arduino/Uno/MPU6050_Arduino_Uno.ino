@@ -70,8 +70,7 @@ void setup() {
   mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);   // ±250°/s
   
   // Enable digital low pass filter (21 Hz cutoff)
-  mpu.setDLPFMode(MPU6050_DLPF_BW_21);
-  
+  // mpu.setDLPFMode(MPU6050_DLPF_BW_21);  // Disabled: constant not available in library  
   // Set sample rate divider (100 Hz sampling: 8000/(1+79))
   mpu.setRate(79);
   
@@ -97,7 +96,8 @@ void loop() {
   // Read accelerometer and gyroscope
   mpu.getAcceleration(&ax, &ay, &az);
   mpu.getRotation(&gx, gy, &gz);
-  mpu.getTemperature(&temperature);
+  mpu.getTemp();  // Get temperature in Celsius (stores nothing - just reads)
+    // Note: getTemp() returns float, temperature variable is int16_t
   
   // Apply calibration offsets
   ax -= accel_calib_x;
