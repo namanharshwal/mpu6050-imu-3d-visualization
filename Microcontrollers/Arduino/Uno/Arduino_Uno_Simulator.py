@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Arduino Uno MPU6050 Simulator
-Simulates MPU6050 sensor data and outputs it in the same format as the actual Arduino firmware
+Arduino Uno MPU6050 Simulator with 3D Visualization Window
+Simulates MPU6050 sensor data with real-time 3D visualization
 For testing and development without hardware
 
 Author: Naman Harshwal
@@ -13,7 +13,19 @@ import time
 import math
 import random
 import sys
+import threading
 from datetime import datetime
+
+try:
+    import pygame
+    from pygame.locals import *
+    from OpenGL.GL import *
+    from OpenGL.GLU import *
+    PYGAME_AVAILABLE = True
+except ImportError:
+    PYGAME_AVAILABLE = False
+    print("[WARNING] pygame/OpenGL not installed. Running in data-only mode.")
+    print("[WARNING] Install with: pip3 install pygame PyOpenGL")
 
 class MPU6050Simulator:
     def __init__(self, sampling_rate=10):
@@ -91,19 +103,182 @@ class MPU6050Simulator:
         }
         return data
 
+class Visualizer3D:
+    def __init__(self, simulator):
+        """
+        Initialize 3D visualization window
+        """
+        self.simulator = simulator
+        self.running = True
+        
+        if not PYGAME_AVAILABLE:
+            return
+        
+        # Initialize Pygame and OpenGL
+        pygame.init()
+        display = (800, 600)
+        self.screen = pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
+        pygame.display.set_caption("MPU6050 3D Simulator - Arduino Uno")
+        
+        # OpenGL initialization
+        glEnable(GL_DEPTH_TEST)
+        glEnable(GL_LIGHTING)
+        glEnable(GL_LIGHT0)
+        glEnable(GL_COLOR_MATERIAL)
+        
+        glMatrixMode(GL_PROJECTION)
+        gluPerspective(45, (display[0] / display[1]), 0.1, 50.0)
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
+        glTranslatef(0.0, 0.0, -5)
+        
+        # Lighting setup
+        glLight(GL_LIGHT0, GL_POSITION, (5, 5, 5, 0))
+        glLight(GL_LIGHT0, GL_AMBIENT, (0.2, 0.2, 0.2, 1))
+        glLight(GL_LIGHT0, GL_DIFFUSE, (1, 1, 1, 1))
+        glLight(GL_LIGHT0, GL_SPECULAR, (1, 1, 1, 1))
+        
+        self.clock = pygame.time.Clock()
+
+    def draw_cube(self):
+        """
+        Draw a 3D cube representing the IMU device
+        """
+        glBegin(GL_QUADS)
+        
+        # Define cube with different colors
+        # Front face - Red
+        glColor3f(1, 0, 0)
+        glVertex3f(-0.5, -0.5, 0.5)
+        glVertex3f(0.5, -0.5, 0.5)
+        glVertex3f(0.5, 0.5, 0.5)
+        glVertex3f(-0.5, 0.5, 0.5)
+        
+        # Back face - Green
+        glColor3f(0, 1, 0)
+        glVertex3f(-0.5, -0.5, -0.5)
+        glVertex3f(-0.5, 0.5, -0.5)
+        glVertex3f(0.5, 0.5, -0.5)
+        glVertex3f(0.5, -0.5, -0.5)
+        
+        # Top face - Blue
+        glColor3f(0, 0, 1)
+        glVertex3f(-0.5, 0.5, -0.5)
+        glVertex3f(-0.5, 0.5, 0.5)
+        glVertex3f(0.5, 0.5, 0.5)
+        glVertex3f(0.5, 0.5, -0.5)
+        
+        # Bottom face - Yellow
+        glColor3f(1, 1, 0)
+        glVertex3f(-0.5, -0.5, -0.5)
+        glVertex3f(0.5, -0.5, -0.5)
+        glVertex3f(0.5, -0.5, 0.5)
+        glVertex3f(-0.5, -0.5, 0.5)
+        
+        # Right face - Cyan
+        glColor3f(0, 1, 1)
+        glVertex3f(0.5, -0.5, -0.5)
+        glVertex3f(0.5, 0.5, -0.5)
+        glVertex3f(0.5, 0.5, 0.5)
+        glVertex3f(0.5, -0.5, 0.5)
+        
+        # Left face - Magenta
+        glColor3f(1, 0, 1)
+        glVertex3f(-0.5, -0.5, -0.5)
+        glVertex3f(-0.5, -0.5, 0.5)
+        glVertex3f(-0.5, 0.5, 0.5)
+        glVertex3f(-0.5, 0.5, -0.5)
+        
+        glEnd()
+
+    def render(self):
+        """
+        Render the 3D visualization
+        """
+        if not PYGAME_AVAILABLE:
+            return
+        
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glClearColor(0.1, 0.1, 0.1, 1)
+        
+        glPushMatrix()
+        
+        # Apply rotation based on sensor data
+        glRotatef(self.simulator.roll, 1, 0, 0)
+        glRotatef(self.simulator.pitch, 0, 1, 0)
+        glRotatef(self.simulator.yaw, 0, 0, 1)
+        
+        # Draw the cube
+        self.draw_cube()
+        
+        glPopMatrix()
+        
+        pygame.display.flip()
+        self.clock.tick(60)  # 60 FPS
+
+    def update(self):
+        """
+        Handle events
+        """
+        if not PYGAME_AVAILABLE:
+            return
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.running = False
+
+    def close(self):
+        """
+        Close the visualization window
+        """
+        if PYGAME_AVAILABLE:
+            pygame.quit()
+
+def visualization_thread(visualizer, simulator):
+    """
+    Thread for running visualization
+    """
+    if not PYGAME_AVAILABLE:
+        return
+    
+    while visualizer.running:
+        visualizer.update()
+        visualizer.render()
+
 def main():
     """
-    Main simulator loop - outputs sensor data
+    Main simulator loop with optional 3D visualization
     """
-    print("[MPU6050 Simulator] Starting Arduino Uno Simulator...")
+    print("[MPU6050 Simulator] Starting Arduino Uno Simulator with 3D Visualization...")
     print("[MPU6050 Simulator] Simulating sensor data at 10Hz")
     print("[MPU6050 Simulator] Press Ctrl+C to stop\n")
     
+    if PYGAME_AVAILABLE:
+        print("[MPU6050 Simulator] 3D Visualization ENABLED")
+    else:
+        print("[MPU6050 Simulator] 3D Visualization DISABLED (pygame/OpenGL required)")
+        print("[MPU6050 Simulator] Data will be output to console only\n")
+    
     simulator = MPU6050Simulator(sampling_rate=10)
+    visualizer = Visualizer3D(simulator)
+    
+    # Start visualization thread if available
+    if PYGAME_AVAILABLE:
+        vis_thread = threading.Thread(target=visualization_thread, args=(visualizer, simulator))
+        vis_thread.daemon = True
+        vis_thread.start()
+    
     start_time = time.time()
     
     try:
         while True:
+            # For visualization: check if window still running
+            if PYGAME_AVAILABLE and not visualizer.running:
+                break
+            
             elapsed = time.time() - start_time
             simulator.timestamp = int(elapsed * 1000)
             
@@ -120,6 +295,9 @@ def main():
             
     except KeyboardInterrupt:
         print("\n[MPU6050 Simulator] Shutdown requested...")
+        if PYGAME_AVAILABLE:
+            visualizer.running = False
+            visualizer.close()
         print("[MPU6050 Simulator] Simulator stopped.")
         sys.exit(0)
 
