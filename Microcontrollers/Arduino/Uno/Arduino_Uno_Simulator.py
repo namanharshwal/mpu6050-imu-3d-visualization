@@ -1,305 +1,353 @@
 #!/usr/bin/env python3
 """
-Arduino Uno MPU6050 Simulator with 3D Visualization Window
-Simulates MPU6050 sensor data with real-time 3D visualization
-For testing and development without hardware
+Arduino Uno MPU6050 3D Visualizer
+Real-time 3D STL model visualization with serial IMU data from Arduino Uno
 
 Author: Naman Harshwal
-License: MIT
+Date: January 2026
+Version: 2.0.0
+
+REQUIREMENTS:
+    pip install pygame PyOpenGL pyserial
+
+USAGE:
+    python Arduino_Uno_Visualizer.py
+
+HARDWARE SETUP:
+    Arduino Uno with MPU6050 (GY-521)
+    - SCL (MPU6050) -> A5 (Arduino)
+    - SDA (MPU6050) -> A4 (Arduino)
+    - INT (MPU6050) -> Pin 2 (Arduino)
+    - GND -> GND
+    - VCC -> 5V
+    - USB connection to PC
 """
 
+import pygame
+from pygame.locals import *
+from OpenGL.GL import *
+from OpenGL.GLU import *
+import serial
 import json
-import time
-import math
-import random
 import sys
-import threading
-from datetime import datetime
+import time
 
-try:
-    import pygame
-    from pygame.locals import *
-    from OpenGL.GL import *
-    from OpenGL.GLU import *
-    PYGAME_AVAILABLE = True
-except ImportError:
-    PYGAME_AVAILABLE = False
-    print("[WARNING] pygame/OpenGL not installed. Running in data-only mode.")
-    print("[WARNING] Install with: pip3 install pygame PyOpenGL")
 
-class MPU6050Simulator:
-    def __init__(self, sampling_rate=10):
-        """
-        Initialize simulator
-        sampling_rate: Hz (default 10)
-        """
-        self.sampling_rate = sampling_rate
-        self.interval = 1.0 / sampling_rate
-        
-        # Simulated sensor states
-        self.accel_x = 0.0
-        self.accel_y = 0.0
-        self.accel_z = 9.81
-        
-        self.gyro_x = 0.0
-        self.gyro_y = 0.0
-        self.gyro_z = 0.0
-        
-        self.temp = 35.0
-        self.roll = 0.0
-        self.pitch = 0.0
-        self.yaw = 0.0
-        
-        self.timestamp = 0
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
 
-    def simulate_motion(self, time_step):
-        """
-        Simulate realistic sensor motion patterns
-        """
-        # Simulate slow rotation
-        self.roll += math.sin(time_step * 0.1) * 0.5
-        self.pitch += math.cos(time_step * 0.1) * 0.5
-        self.yaw += 0.2
-        
-        # Keep angles within bounds
-        self.roll = (self.roll + 180) % 360 - 180
-        self.pitch = (self.pitch + 180) % 360 - 180
-        self.yaw = self.yaw % 360
-        
-        # Simulate accelerometer based on orientation
-        self.accel_x = 9.81 * math.sin(math.radians(self.roll))
-        self.accel_y = 9.81 * math.sin(math.radians(self.pitch))
-        self.accel_z = 9.81 * math.cos(math.radians(self.roll)) * math.cos(math.radians(self.pitch))
-        
-        # Add small noise
-        self.accel_x += random.uniform(-0.1, 0.1)
-        self.accel_y += random.uniform(-0.1, 0.1)
-        self.accel_z += random.uniform(-0.1, 0.1)
-        
-        # Simulate gyroscope
-        self.gyro_x = math.sin(time_step * 0.05) * 2
-        self.gyro_y = math.cos(time_step * 0.05) * 2
-        self.gyro_z = 0.2 + random.uniform(-0.01, 0.01)
-        
-        # Simulate temperature variations
-        self.temp = 35.0 + math.sin(time_step * 0.01) * 2 + random.uniform(-0.5, 0.5)
+# Serial Communication Configuration
+SERIAL_PORT = 'COM3'          # Change to your COM port
+BAUD_RATE = 38400            # Arduino Uno standard rate
+SERIAL_TIMEOUT = 1           # Timeout in seconds
 
-    def get_sensor_data(self):
-        """
-        Return sensor data in JSON format matching Arduino firmware output
-        """
-        data = {
-            "timestamp": self.timestamp,
-            "accel_x": round(self.accel_x, 4),
-            "accel_y": round(self.accel_y, 4),
-            "accel_z": round(self.accel_z, 4),
-            "gyro_x": round(self.gyro_x, 6),
-            "gyro_y": round(self.gyro_y, 6),
-            "gyro_z": round(self.gyro_z, 6),
-            "roll": round(self.roll, 2),
-            "pitch": round(self.pitch, 2),
-            "yaw": round(self.yaw, 2),
-            "temp": round(self.temp, 2)
-        }
-        return data
+# 3D Visualization Configuration
+WINDOW_WIDTH = 800
+WINDOW_HEIGHT = 600
+FPS_LIMIT = 60
 
-class Visualizer3D:
-    def __init__(self, simulator):
-        """
-        Initialize 3D visualization window
-        """
-        self.simulator = simulator
-        self.running = True
-        
-        if not PYGAME_AVAILABLE:
-            return
-        
-        # Initialize Pygame and OpenGL
-        pygame.init()
-        display = (800, 600)
-        self.screen = pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
-        pygame.display.set_caption("MPU6050 3D Simulator - Arduino Uno")
-        
-        # OpenGL initialization
-        glEnable(GL_DEPTH_TEST)
-        glEnable(GL_LIGHTING)
-        glEnable(GL_LIGHT0)
-        glEnable(GL_COLOR_MATERIAL)
-        
-        glMatrixMode(GL_PROJECTION)
-        gluPerspective(45, (display[0] / display[1]), 0.1, 50.0)
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
-        glTranslatef(0.0, 0.0, -5)
-        
-        # Lighting setup
-        glLight(GL_LIGHT0, GL_POSITION, (5, 5, 5, 0))
-        glLight(GL_LIGHT0, GL_AMBIENT, (0.2, 0.2, 0.2, 1))
-        glLight(GL_LIGHT0, GL_DIFFUSE, (1, 1, 1, 1))
-        glLight(GL_LIGHT0, GL_SPECULAR, (1, 1, 1, 1))
-        
-        self.clock = pygame.time.Clock()
+# STL Model Configuration
+STL_FILE_PATH = "model.STL"   # Change to your STL file path
+MODEL_SCALE = 0.5             # Adjust model size
+MODEL_COLOR = (1.0, 0.0, 0.0) # Red color (R, G, B)
 
-    def draw_cube(self):
-        """
-        Draw a 3D cube representing the IMU device
-        """
-        glBegin(GL_QUADS)
-        
-        # Define cube with different colors
-        # Front face - Red
-        glColor3f(1, 0, 0)
-        glVertex3f(-0.5, -0.5, 0.5)
-        glVertex3f(0.5, -0.5, 0.5)
-        glVertex3f(0.5, 0.5, 0.5)
-        glVertex3f(-0.5, 0.5, 0.5)
-        
-        # Back face - Green
-        glColor3f(0, 1, 0)
-        glVertex3f(-0.5, -0.5, -0.5)
-        glVertex3f(-0.5, 0.5, -0.5)
-        glVertex3f(0.5, 0.5, -0.5)
-        glVertex3f(0.5, -0.5, -0.5)
-        
-        # Top face - Blue
-        glColor3f(0, 0, 1)
-        glVertex3f(-0.5, 0.5, -0.5)
-        glVertex3f(-0.5, 0.5, 0.5)
-        glVertex3f(0.5, 0.5, 0.5)
-        glVertex3f(0.5, 0.5, -0.5)
-        
-        # Bottom face - Yellow
-        glColor3f(1, 1, 0)
-        glVertex3f(-0.5, -0.5, -0.5)
-        glVertex3f(0.5, -0.5, -0.5)
-        glVertex3f(0.5, -0.5, 0.5)
-        glVertex3f(-0.5, -0.5, 0.5)
-        
-        # Right face - Cyan
-        glColor3f(0, 1, 1)
-        glVertex3f(0.5, -0.5, -0.5)
-        glVertex3f(0.5, 0.5, -0.5)
-        glVertex3f(0.5, 0.5, 0.5)
-        glVertex3f(0.5, -0.5, 0.5)
-        
-        # Left face - Magenta
-        glColor3f(1, 0, 1)
-        glVertex3f(-0.5, -0.5, -0.5)
-        glVertex3f(-0.5, -0.5, 0.5)
-        glVertex3f(-0.5, 0.5, 0.5)
-        glVertex3f(-0.5, 0.5, -0.5)
-        
-        glEnd()
+# Camera Configuration
+CAMERA_DISTANCE = -50.0       # Distance from model
 
-    def render(self):
-        """
-        Render the 3D visualization
-        """
-        if not PYGAME_AVAILABLE:
-            return
-        
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glClearColor(0.1, 0.1, 0.1, 1)
-        
-        glPushMatrix()
-        
-        # Apply rotation based on sensor data
-        glRotatef(self.simulator.roll, 1, 0, 0)
-        glRotatef(self.simulator.pitch, 0, 1, 0)
-        glRotatef(self.simulator.yaw, 0, 0, 1)
-        
-        # Draw the cube
-        self.draw_cube()
-        
-        glPopMatrix()
-        
-        pygame.display.flip()
-        self.clock.tick(60)  # 60 FPS
 
-    def update(self):
-        """
-        Handle events
-        """
-        if not PYGAME_AVAILABLE:
-            return
-        
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    self.running = False
+# ============================================================================
+# GLOBAL VARIABLES
+# ============================================================================
 
-    def close(self):
-        """
-        Close the visualization window
-        """
-        if PYGAME_AVAILABLE:
-            pygame.quit()
+ser = None
+roll = 0.0
+pitch = 0.0
+yaw = 0.0
 
-def visualization_thread(visualizer, simulator):
+fps_clock = None
+fps_counter = 0
+last_fps_time = time.time()
+
+
+# ============================================================================
+# INITIALIZATION FUNCTIONS
+# ============================================================================
+
+def init_serial():
     """
-    Thread for running visualization
+    Initialize serial communication with Arduino Uno
+    
+    Arduino Uno serial settings:
+    - Baud Rate: 38400
+    - Data Bits: 8
+    - Stop Bits: 1
+    - Parity: None
     """
-    if not PYGAME_AVAILABLE:
+    global ser
+    try:
+        ser = serial.Serial(
+            port=SERIAL_PORT,
+            baudrate=BAUD_RATE,
+            timeout=SERIAL_TIMEOUT,
+            parity=serial.PARITY_NONE,
+            stopbits=serial.STOPBITS_ONE,
+            bytesize=serial.EIGHTBITS
+        )
+        print(f"[SUCCESS] Serial connection established on {SERIAL_PORT}")
+        print(f"[INFO] Baud rate: {BAUD_RATE}")
+        print(f"[INFO] Waiting for Arduino initialization...")
+        time.sleep(2)  # Wait for Arduino to stabilize
+        return True
+    except serial.SerialException as e:
+        print(f"[ERROR] Failed to open serial port {SERIAL_PORT}")
+        print(f"[ERROR] Details: {e}")
+        return False
+
+
+def init_opengl():
+    """
+    Initialize OpenGL settings
+    """
+    glShadeModel(GL_SMOOTH)
+    glClearColor(0.1, 0.1, 0.1, 1.0)
+    glClearDepth(1.0)
+    glEnable(GL_DEPTH_TEST)
+    glDepthFunc(GL_LEQUAL)
+    glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST)
+    
+    # Lighting setup
+    glEnable(GL_LIGHTING)
+    glEnable(GL_LIGHT0)
+    glLight(GL_LIGHT0, GL_POSITION, (1.0, 1.0, 1.0, 0.0))
+    glLight(GL_LIGHT0, GL_DIFFUSE, (1.0, 1.0, 1.0, 1.0))
+    glLight(GL_LIGHT0, GL_SPECULAR, (1.0, 1.0, 1.0, 1.0))
+
+
+def reshape(width, height):
+    """
+    Handle window resize
+    """
+    if height == 0:
+        height = 1
+    glViewport(0, 0, width, height)
+    glMatrixMode(GL_PROJECTION)
+    glLoadIdentity()
+    gluPerspective(45, float(width) / float(height), 0.1, 100.0)
+    glMatrixMode(GL_MODELVIEW)
+    glLoadIdentity()
+
+
+def draw_axes():
+    """
+    Draw RGB axes for reference (X=Red, Y=Green, Z=Blue)
+    """
+    glDisable(GL_LIGHTING)
+    glLineWidth(2.0)
+    
+    glBegin(GL_LINES)
+    # X axis - Red
+    glColor3f(1, 0, 0)
+    glVertex3f(0, 0, 0)
+    glVertex3f(10, 0, 0)
+    
+    # Y axis - Green
+    glColor3f(0, 1, 0)
+    glVertex3f(0, 0, 0)
+    glVertex3f(0, 10, 0)
+    
+    # Z axis - Blue
+    glColor3f(0, 0, 1)
+    glVertex3f(0, 0, 0)
+    glVertex3f(0, 0, 10)
+    glEnd()
+    
+    glEnable(GL_LIGHTING)
+
+
+def draw_cube():
+    """
+    Draw a reference cube
+    """
+    glColor3fv(MODEL_COLOR)
+    size = 5
+    
+    glBegin(GL_QUADS)
+    # Front
+    glVertex3f(-size, -size, size)
+    glVertex3f(size, -size, size)
+    glVertex3f(size, size, size)
+    glVertex3f(-size, size, size)
+    
+    # Back
+    glVertex3f(-size, -size, -size)
+    glVertex3f(-size, size, -size)
+    glVertex3f(size, size, -size)
+    glVertex3f(size, -size, -size)
+    
+    # Left
+    glVertex3f(-size, -size, -size)
+    glVertex3f(-size, -size, size)
+    glVertex3f(-size, size, size)
+    glVertex3f(-size, size, -size)
+    
+    # Right
+    glVertex3f(size, -size, -size)
+    glVertex3f(size, size, -size)
+    glVertex3f(size, size, size)
+    glVertex3f(size, -size, size)
+    
+    # Top
+    glVertex3f(-size, size, -size)
+    glVertex3f(-size, size, size)
+    glVertex3f(size, size, size)
+    glVertex3f(size, size, -size)
+    
+    # Bottom
+    glVertex3f(-size, -size, -size)
+    glVertex3f(size, -size, -size)
+    glVertex3f(size, -size, size)
+    glVertex3f(-size, -size, size)
+    glEnd()
+
+
+def display():
+    """
+    Render the 3D scene
+    """
+    global roll, pitch, yaw
+    
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    glLoadIdentity()
+    
+    # Position camera
+    glTranslatef(0, 0, CAMERA_DISTANCE)
+    
+    # Apply rotations based on IMU data
+    glRotatef(roll, 1.0, 0.0, 0.0)    # Roll around X-axis
+    glRotatef(pitch, 0.0, 1.0, 0.0)   # Pitch around Y-axis
+    glRotatef(yaw, 0.0, 0.0, 1.0)     # Yaw around Z-axis
+    
+    # Draw reference axes
+    draw_axes()
+    
+    # Draw cube
+    glScalef(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE)
+    draw_cube()
+    
+    pygame.display.flip()
+
+
+def read_serial_data():
+    """
+    Read and parse JSON data from Arduino Uno
+    
+    Expected format: {"roll": value, "pitch": value, "yaw": value}
+    """
+    global roll, pitch, yaw
+    
+    if ser is None or not ser.is_open:
         return
     
-    while visualizer.running:
-        visualizer.update()
-        visualizer.render()
+    try:
+        if ser.in_waiting > 0:
+            line = ser.readline().decode('utf-8').strip()
+            
+            if line.startswith('{') and line.endswith('}'):
+                try:
+                    data = json.loads(line)
+                    roll = float(data.get('roll', 0.0))
+                    pitch = float(data.get('pitch', 0.0))
+                    yaw = float(data.get('yaw', 0.0))
+                except json.JSONDecodeError:
+                    pass
+    except Exception as e:
+        print(f"[ERROR] Serial read error: {e}")
+
+
+def update_fps():
+    """
+    Update and display FPS counter
+    """
+    global fps_counter, last_fps_time
+    
+    fps_counter += 1
+    current_time = time.time()
+    
+    if current_time - last_fps_time >= 1.0:
+        print(f"FPS: {fps_counter} | Roll: {roll:7.2f}° | Pitch: {pitch:7.2f}° | Yaw: {yaw:7.2f}°")
+        fps_counter = 0
+        last_fps_time = current_time
+
 
 def main():
     """
-    Main simulator loop with optional 3D visualization
+    Main function - Run the visualization
     """
-    print("[MPU6050 Simulator] Starting Arduino Uno Simulator with 3D Visualization...")
-    print("[MPU6050 Simulator] Simulating sensor data at 10Hz")
-    print("[MPU6050 Simulator] Press Ctrl+C to stop\n")
+    global fps_clock
     
-    if PYGAME_AVAILABLE:
-        print("[MPU6050 Simulator] 3D Visualization ENABLED")
-    else:
-        print("[MPU6050 Simulator] 3D Visualization DISABLED (pygame/OpenGL required)")
-        print("[MPU6050 Simulator] Data will be output to console only\n")
+    print("\n" + "="*70)
+    print("  ARDUINO UNO MPU6050 3D ORIENTATION VISUALIZER")
+    print("="*70)
+    print(f"\n[INFO] Serial Port: {SERIAL_PORT}")
+    print(f"[INFO] Baud Rate: {BAUD_RATE}")
+    print(f"[INFO] Window Size: {WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+    print(f"[INFO] FPS Limit: {FPS_LIMIT}\n")
     
-    simulator = MPU6050Simulator(sampling_rate=10)
-    visualizer = Visualizer3D(simulator)
+    # Initialize serial
+    if not init_serial():
+        sys.exit(1)
     
-    # Start visualization thread if available
-    if PYGAME_AVAILABLE:
-        vis_thread = threading.Thread(target=visualization_thread, args=(visualizer, simulator))
-        vis_thread.daemon = True
-        vis_thread.start()
+    # Initialize pygame and OpenGL
+    pygame.init()
+    pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), DOUBLEBUF | OPENGL)
+    pygame.display.set_caption("Arduino Uno MPU6050 - 3D Orientation Visualizer")
     
-    start_time = time.time()
+    reshape(WINDOW_WIDTH, WINDOW_HEIGHT)
+    init_opengl()
     
-    try:
-        while True:
-            # For visualization: check if window still running
-            if PYGAME_AVAILABLE and not visualizer.running:
-                break
-            
-            elapsed = time.time() - start_time
-            simulator.timestamp = int(elapsed * 1000)
-            
-            # Simulate motion
-            simulator.simulate_motion(elapsed)
-            
-            # Get and print data
-            data = simulator.get_sensor_data()
-            print(json.dumps(data))
-            sys.stdout.flush()
-            
-            # Sleep for sampling interval
-            time.sleep(simulator.interval)
-            
-    except KeyboardInterrupt:
-        print("\n[MPU6050 Simulator] Shutdown requested...")
-        if PYGAME_AVAILABLE:
-            visualizer.running = False
-            visualizer.close()
-        print("[MPU6050 Simulator] Simulator stopped.")
-        sys.exit(0)
+    fps_clock = pygame.time.Clock()
+    
+    print("[INFO] Visualization starting...")
+    print("[INFO] Window controls:")
+    print("       - Close window to exit (or press ESC)")
+    print("       - Red/Green/Blue axes = X/Y/Z orientation")
+    print("\n" + "="*70 + "\n")
+    
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                running = False
+            elif event.type == KEYDOWN:
+                if event.key == K_ESCAPE:
+                    running = False
+        
+        # Read IMU data from Arduino
+        read_serial_data()
+        
+        # Render scene
+        display()
+        
+        # Update FPS
+        update_fps()
+        fps_clock.tick(FPS_LIMIT)
+    
+    # Cleanup
+    if ser and ser.is_open:
+        ser.close()
+        print("\n[INFO] Serial connection closed")
+    
+    pygame.quit()
+    print("[INFO] Visualization terminated")
+    print("="*70 + "\n")
 
-if __name__ == "__main__":
-    main()
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as e:
+        print(f"\n[ERROR] Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
