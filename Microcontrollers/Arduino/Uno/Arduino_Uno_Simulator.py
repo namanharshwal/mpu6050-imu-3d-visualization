@@ -351,3 +351,13 @@ if __name__ == '__main__':
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
+    # Print statistics
+    print("[INFO] Session Statistics:")
+    print(f"       Valid frames: {valid_data_count}")
+    print(f"       Invalid frames: {invalid_data_count}")
+    if error_buffer:
+        print(f"       Last errors:")
+        for i, err in enumerate(list(error_buffer)[-5:], 1):
+            print(f"       {i}. {err}")
+    print("="*80 + "\n")
