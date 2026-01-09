@@ -96,10 +96,7 @@ void loop() {
   // Read accelerometer and gyroscope
   mpu.getAcceleration(&ax, &ay, &az);
   mpu.getRotation(&gx, gy, &gz);
-  mpu.getTemp();  // Get temperature in Celsius (stores nothing - just reads)
-    // Note: getTemp() returns float, temperature variable is int16_t
-  
-  // Apply calibration offsets
+  temperature = mpu.getTemperature();  // Get temperature in 16-bit 2's complement format  // Apply calibration offsets
   ax -= accel_calib_x;
   ay -= accel_calib_y;
   az -= accel_calib_z;
