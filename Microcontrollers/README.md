@@ -219,5 +219,45 @@ MIT License - See LICENSE file in root directory
 For issues or questions:
 1. Check the troubleshooting section above
 2. Verify hardware connections
-3. Review Python visualization script error messages
-4. Check GitHub Issues: [Project Issues](../../../issues)
+3. 
+### 3. **ESP32 (Espressif ESP32)** 🚀
+
+Location: `./ESP32/`
+
+**Features:**
+- ✅ Dual-core 240 MHz processor (10x faster than Arduino)
+- ✅ WiFi and Bluetooth connectivity
+- ✅ Higher baud rate (115200)
+- ✅ ArduinoJson library for clean data format
+- ✅ 520 KB SRAM for advanced algorithms
+
+**Hardware Requirements:**
+- ESP32 Development Board (NodeMCU or similar)
+- MPU6050 GY-521 module
+- I2C connections on GPIO21 (SDA), GPIO22 (SCL)
+
+**Setup:**
+Refer to [ESP32 README](./ESP32/README.md) for detailed installation and usage instructions.
+
+### 4. **LPC2148 (ARM Cortex-M3)** 🛒
+
+Location: `./LPC2148/`
+
+**Features:**
+- ✅ Industrial-grade ARM processor
+- ✅ Very low cost (budget-friendly)
+- ✅ 32-bit 60 MHz processing
+- ✅ I2C master mode @ 400kHz
+- ✅ Suitable for real-time embedded systems
+
+**Hardware Requirements:**
+- LPC2148 Microcontroller Board
+- MPU6050 GY-521 sensor module
+- USB-to-Serial adapter for programming
+- I2C connections on P0.18 (SDA), P0.19 (SCL)
+
+**Setup:**
+Refer to [LPC2148 README](./LPC2148/README.md) for detailed setup and compilation instructions.
+
+4. Review Python visualization script error messages
+5. Check GitHub Issues: [Project Issues](../../../issues)
