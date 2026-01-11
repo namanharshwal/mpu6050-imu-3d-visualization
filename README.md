@@ -1,4 +1,5 @@
 # MPU6050 IMU 3D Visualization System
+![output](https://github.com/user-attachments/assets/c5ec19b3-cab9-47bc-9bb3-207997053c4a)
 
 > A comprehensive Python-based real-time 3D visualization system for STL models synchronized with MPU6050 inertial measurement unit (IMU) sensor data. Designed for robotics engineers working with autonomous systems, SLAM, and hardware debugging.
 
